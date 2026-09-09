@@ -153,10 +153,10 @@ jobs:
           cp ./susfs4ksu/kernel_patches/include/linux/susfs_def.h ./common/include/linux/
           cd ./common
           patch -p1 < 50_add_susfs_in_gki-android13-5.15.patch || true
-          # 手动追加 SUSFS Kconfig 定义到 fs/Kconfig (官方10_enable补丁针对旧版KernelSU, SukiSU v4.2.0直接追加Kconfig段)
-          cat "${{ github.workspace }}/other_patch/susfs_kconfig.txt" >> fs/Kconfig
-          echo "=== SUSFS Kconfig 段已追加 ==="
-          grep -n 'KSU_SUSFS' fs/Kconfig | head -3
+          # 手动追加 SUSFS Kconfig 定义到 drivers/Kconfig (fs/Kconfig 先于 drivers/Kconfig 导入, KSU 未定义会导致 depends on KSU 报错)
+          cat "${{ github.workspace }}/other_patch/susfs_kconfig.txt" >> drivers/Kconfig
+          echo "=== SUSFS Kconfig 段已追加到 drivers/Kconfig ==="
+          grep -n 'KSU_SUSFS' drivers/Kconfig | head -3
           echo "SUSFS 补丁应用完成！"
             
       - name: 添加SUSFS配置项
