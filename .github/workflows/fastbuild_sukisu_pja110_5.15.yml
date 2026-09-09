@@ -58,12 +58,15 @@ jobs:
           echo "当前仓库：$GITHUB_REPOSITORY"
           echo "当前分支：$GITHUB_REF_NAME"
 
-          sudo apt-mark hold firefox &&
-          sudo apt-mark hold libc-bin &&
-          sudo apt purge man-db &&
-          sudo rm -rf /var/lib/man-db/auto-update &&
-          sudo apt update &&
-          sudo apt-get install -y --no-install-recommends binutils python-is-python3 libssl-dev libelf-dev &
+          # 前置环境依赖 (前台安装, 确保 libelf-dev 等就绪 - scripts/faddr2line 需要 libelf.h)
+          sudo apt-mark hold firefox >/dev/null 2>&1 || true
+          sudo apt-mark hold libc-bin >/dev/null 2>&1 || true
+          sudo apt purge man-db >/dev/null 2>&1 || true
+          sudo rm -rf /var/lib/man-db/auto-update
+          sudo apt update >/dev/null 2>&1
+          sudo apt-get install -y --no-install-recommends binutils python-is-python3 libssl-dev libelf-dev libelf1 >/dev/null 2>&1
+          echo "=== libelf 安装确认 ==="
+          ls -la /usr/include/libelf.h /usr/lib/x86_64-linux-gnu/libelf.so 2>/dev/null || echo "LIBELF MISSING"
           
           echo "正在下载 OnePlusOSS sm8550 内核源码..."
           aria2c -s16 -x16 -k1M --max-tries=5 --retry-wait=3 https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8550/archive/refs/heads/oneplus/sm8550_b_16.0.0_ace_2_pro.zip -o common.zip &
