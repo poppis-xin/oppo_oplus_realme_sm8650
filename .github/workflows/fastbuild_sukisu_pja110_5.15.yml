@@ -232,6 +232,10 @@ jobs:
           echo "LLD版本: $($CLANG_DIR/ld.lld --version | head -n 1)"
           echo "开始编译内核..."
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$CLANG_DIR/clang" LD="$CLANG_DIR/ld.lld" HOSTLD="$CLANG_DIR/ld.lld" O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
+          # 强制启用 KSU/SUSFS (tristate 符号在 defconfig 后需显式设置为 =y)
+          ./scripts/config --file=out/.config --enable KSU --set-val KSU y 2>/dev/null || true
+          ./scripts/config --file=out/.config --enable KSU_SUSFS --set-val KSU_SUSFS y 2>/dev/null || true
+          grep -E '^CONFIG_KSU[= ]|^CONFIG_KSU_SUSFS[= ]' out/.config | head -5
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$CLANG_DIR/clang" LD="$CLANG_DIR/ld.lld" HOSTLD="$CLANG_DIR/ld.lld" O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
           echo "内核编译完成！"
           ls -la out/arch/arm64/boot/Image || echo "Image NOT FOUND"
