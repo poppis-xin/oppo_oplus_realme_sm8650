@@ -152,7 +152,12 @@ jobs:
           cp ./susfs4ksu/kernel_patches/include/linux/susfs.h ./common/include/linux/
           cp ./susfs4ksu/kernel_patches/include/linux/susfs_def.h ./common/include/linux/
           cd ./common
-          patch -p1 < 50_add_susfs_in_gki-android13-5.15.patch || true
+          patch -p1 --dry-run -N -F 3 < 50_add_susfs_in_gki-android13-5.15.patch 2>&1 | tee /tmp/patch-reject.log || true
+          patch -p1 -N -F 3 < 50_add_susfs_in_gki-android13-5.15.patch || true
+          # 强制确保 mm/memory.c 包含 susfs_def.h (若补丁 include hunk 因上下文失败)
+          grep -q 'linux/susfs_def.h' mm/memory.c || sed -i '/#include <linux/vmalloc.h>/a #include <linux/susfs_def.h>' mm/memory.c
+          echo "=== mm/memory.c include 检查 ==="
+          grep -n 'susfs_def' mm/memory.c
           # 手动追加 SUSFS Kconfig 定义到 drivers/Kconfig (fs/Kconfig 先于 drivers/Kconfig 导入, KSU 未定义会导致 depends on KSU 报错)
           cat "${{ github.workspace }}/other_patch/susfs_kconfig.txt" >> drivers/Kconfig
           echo "=== SUSFS Kconfig 段已追加到 drivers/Kconfig ==="
