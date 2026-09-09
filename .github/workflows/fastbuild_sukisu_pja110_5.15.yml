@@ -105,40 +105,25 @@ jobs:
           grep -n 'oplus/storage' drivers/soc/Makefile || true
           grep -n 'OPLUS_SCHED_TUNE' arch/arm64/configs/gki_defconfig || true
             
-      - name: 添加KernelSU(SukiSU Ultra v4.2.0)
+      - name: 添加KernelSU(SukiSU Ultra builtin 分支)
         id: ksu_version
         run: |
           cd kernel_workspace
-          echo "正在配置 SukiSU Ultra v4.2.0..."
-          # 浅克隆 v4.2.0 tag (避免全仓库 clone 失败)
-          git clone --depth=1 -b v4.2.0 https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU && echo "KernelSU v4.2.0 克隆完成" || (echo "浅克隆失败，尝试全量clone" && git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU && cd KernelSU && git checkout v4.2.0)
-          # setup.sh 等价操作：复制 kernel 到 common/drivers/kernelsu + Makefile/Kconfig 注入 (不用symlink,避免Kbuild srctree歧义)
+          echo "正在配置 SukiSU Ultra builtin (官方内置GKI分支)..."
+          # 克隆官方 builtin 分支 (内置 GKI 制式, kernel/Makefile 含 obj-$(CONFIG_KSU) := ksu.o)
+          git clone --depth=1 -b builtin https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU && echo "KernelSU builtin 克隆完成" || (echo "浅克隆失败" && exit 1)
+          # setup.sh 等价操作 (避免 setup.sh 内 git pull 拉错分支; builtin 分支 kernel/Makefile 已含内置 obj)
           cd common/drivers
-          mkdir -p kernelsu
-          cp -r "$PWD/../../KernelSU/kernel/." kernelsu/
-          # 复制 SukiSU uapi/ 头文件到内核 include/uapi/ (内置编译 #include <uapi/...> 从 include/ 找)
-          mkdir -p "$PWD/../include/uapi"
-          cp -r "$PWD/../../KernelSU/uapi/." "$PWD/../include/uapi/"
-          echo "=== uapi 复制确认 ==="
-          ls "$PWD/../include/uapi/" | head
-          # 目录版 obj 让内核进入 kernelsu/ 读取其 Kbuild; kernelsu-objs 由 Kbuild 收集
+          ln -sf "$(realpath --relative-to="$PWD" "$PWD/../../KernelSU/kernel")" kernelsu
           grep -q "kernelsu" Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" Kconfig
-          echo "=== 验证 kernelsu 目录 ==="
-          ls kernelsu/ | head
+          echo "=== 验证 symlink ==="
+          ls -la kernelsu
           echo "=== 验证 Makefile ==="
           grep 'kernelsu' Makefile
           echo "=== 验证 Kconfig ==="
           grep 'kernelsu' Kconfig
-          # 关键: kernelsu/Kbuild 补 obj-$(CONFIG_KSU) += kernelsu.o (内置链接)
-          grep -q '^obj-\$(CONFIG_KSU) += kernelsu\.o$' kernelsu/Kbuild || echo 'obj-$(CONFIG_KSU) += kernelsu.o' >> kernelsu/Kbuild
-          # 关键: 内置模式缺 KSU_KERNEL_DIR (LKM才设置), 直接定义 (用 $(obj) 而非 $(srctree), Kbuild内置变量最可靠)
-          grep -q '^KSU_KERNEL_DIR :=' kernelsu/Kbuild || sed -i '1i KSU_KERNEL_DIR := $(obj)' kernelsu/Kbuild
-          # 保险: 直接补 ccflags include 路径
-          grep -q 'ccflags-y += -I\$(KSU_KERNEL_DIR)/include' kernelsu/Kbuild || sed -i '2i ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include' kernelsu/Kbuild
-          grep -n 'KSU_KERNEL_DIR\|ccflags-y += -I' kernelsu/Kbuild | head -3
           cd ..
-          echo "KernelSU 已复制到 common/drivers/kernelsu"
           # 内核版本伪造: 固定为原厂
           if [[ -n "${{ github.event.inputs.kernel_suffix }}" ]]; then
             FAKE_SUFFIX=${{ github.event.inputs.kernel_suffix }}
@@ -149,12 +134,6 @@ jobs:
           echo 'CONFIG_KSU=y' >> ./arch/arm64/configs/gki_defconfig
           echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%@cctv18"' >> ./arch/arm64/configs/gki_defconfig
           echo 'CONFIG_KPM=y' >> ./arch/arm64/configs/gki_defconfig
-          cd ../KernelSU
-          # 匹配 SukiSU Ultra v4.2.0 管理器 (40900)
-          KSU_VERSION=40900
-          sed -i "s/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION     := $KSU_VERSION/" kernel/Kbuild
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-          echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
             
       - name: 应用SUSFS补丁(gki-android13-5.15)
         if: inputs.susfs_enable
@@ -167,17 +146,12 @@ jobs:
           cp ./susfs4ksu/kernel_patches/include/linux/susfs.h ./common/include/linux/
           cp ./susfs4ksu/kernel_patches/include/linux/susfs_def.h ./common/include/linux/
           cd ./common
-          patch -p1 --dry-run -N -F 3 < 50_add_susfs_in_gki-android13-5.15.patch 2>&1 | tee /tmp/patch-reject.log || true
           patch -p1 -N -F 3 < 50_add_susfs_in_gki-android13-5.15.patch || true
-          # 强制确保 mm/memory.c 包含 susfs_def.h (若补丁 include hunk 因上下文失败)
+          # 强制确保 mm/memory.c 包含 susfs_def.h (若补丁 include hunk 因来源差异失败)
           grep -q 'linux/susfs_def.h' mm/memory.c || sed -i '/#include <linux/vmalloc.h>/a #include <linux/susfs_def.h>' mm/memory.c
           echo "=== mm/memory.c include 检查 ==="
           grep -n 'susfs_def' mm/memory.c
-          # 手动追加 SUSFS Kconfig 定义到 drivers/Kconfig (fs/Kconfig 先于 drivers/Kconfig 导入, KSU 未定义会导致 depends on KSU 报错)
-          cat "${{ github.workspace }}/other_patch/susfs_kconfig.txt" >> drivers/Kconfig
-          echo "=== SUSFS Kconfig 段已追加到 drivers/Kconfig ==="
-          grep -n 'KSU_SUSFS' drivers/Kconfig | head -3
-          echo "SUSFS 补丁应用完成！"
+          echo "SUSFS 补丁应用完成！(Kconfig 由 builtin 分支驱动自带)"
             
       - name: 添加SUSFS配置项
         if: inputs.susfs_enable
