@@ -199,6 +199,10 @@ jobs:
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./arch/arm64/configs/gki_defconfig
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./arch/arm64/configs/gki_defconfig
           echo "CONFIG_HEADERS_INSTALL=n" >> ./arch/arm64/configs/gki_defconfig
+          # 禁用LTO (5.15+ThinLTO在4核runner上 vmlinux LTO 阶段超时被杀)
+          echo "CONFIG_LTO_NONE=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_LTO_CLANG_THIN=n" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_LTO_CLANG_FULL=n" >> ./arch/arm64/configs/gki_defconfig
           sed -i 's/check_defconfig//' ./build.config.gki
           # 去除 ABI 保护 & dirty 后缀
           rm ./android/abi_gki_protected_exports_* || true
