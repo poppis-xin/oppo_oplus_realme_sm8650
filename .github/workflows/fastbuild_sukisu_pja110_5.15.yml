@@ -206,12 +206,17 @@ jobs:
             
       - name: 编译内核
         run: |
-          cd kernel_workspace/common
+          WORKDIR="$(pwd)/kernel_workspace"
+          cd "$WORKDIR/common"
+          # 工具链目录：clang19 解压后直接是 bin/
+          export PATH="$WORKDIR/clang19/bin:$PATH"
+          export PATH="$WORKDIR/build-tools/bin:$PATH"
+          CLANG_DIR="$WORKDIR/clang19/bin"
+          echo "Clang版本: $($CLANG_DIR/clang --version | head -n 1)"
+          echo "LLD版本: $($CLANG_DIR/ld.lld --version | head -n 1)"
           echo "开始编译内核..."
-          export CLANG_PATH="${{ github.workspace }}/kernel_workspace/clang19/clang-r536225/bin"
-          export PATH="$CLANG_PATH:$PATH"
-          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
-          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$CLANG_DIR/clang" LD="$CLANG_DIR/ld.lld" HOSTLD="$CLANG_DIR/ld.lld" O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$CLANG_DIR/clang" LD="$CLANG_DIR/ld.lld" HOSTLD="$CLANG_DIR/ld.lld" O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
           echo "内核编译完成！"
           ls -la out/arch/arm64/boot/Image || echo "Image NOT FOUND"
             
