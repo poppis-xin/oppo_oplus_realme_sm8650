@@ -116,6 +116,11 @@ jobs:
           cd common/drivers
           mkdir -p kernelsu
           cp -r "$PWD/../../KernelSU/kernel/." kernelsu/
+          # 复制 SukiSU uapi/ 头文件到内核 include/uapi/ (内置编译 #include <uapi/...> 从 include/ 找)
+          mkdir -p "$PWD/../include/uapi"
+          cp -r "$PWD/../../KernelSU/uapi/." "$PWD/../include/uapi/"
+          echo "=== uapi 复制确认 ==="
+          ls "$PWD/../include/uapi/" | head
           # 目录版 obj 让内核进入 kernelsu/ 读取其 Kbuild; kernelsu-objs 由 Kbuild 收集
           grep -q "kernelsu" Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" Kconfig
