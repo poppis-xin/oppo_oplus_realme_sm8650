@@ -132,9 +132,9 @@ jobs:
           grep 'kernelsu' Kconfig
           # 关键: kernelsu/Kbuild 补 obj-$(CONFIG_KSU) += kernelsu.o (内置链接)
           grep -q '^obj-\$(CONFIG_KSU) += kernelsu\.o$' kernelsu/Kbuild || echo 'obj-$(CONFIG_KSU) += kernelsu.o' >> kernelsu/Kbuild
-          # 关键: KSU_KERNEL_DIR 在 LKM 模式才设置, 内置模式必须手动定义 (头文件 -I 路径), 需在 -I 使用行之前插入第一行
-          grep -q '^KSU_KERNEL_DIR :=' kernelsu/Kbuild || sed -i '1i KSU_KERNEL_DIR := $(srctree)/drivers/kernelsu' kernelsu/Kbuild
-          grep -n 'obj-\$(CONFIG_KSU)\|KSU_KERNEL_DIR' kernelsu/Kbuild | head -3
+          # 关键: 内置模式缺 KSU_KERNEL_DIR, 直接补 ccflags include 路径 (ksu.h 在 include/ 子目录)
+          grep -q 'ccflags-y += -I\$(srctree)/drivers/kernelsu/include' kernelsu/Kbuild || sed -i '1i ccflags-y += -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include' kernelsu/Kbuild
+          grep -n 'obj-\$(CONFIG_KSU)\|ccflags-y += -I' kernelsu/Kbuild | head -3
           cd ..
           echo "KernelSU 已复制到 common/drivers/kernelsu"
           # 内核版本伪造: 固定为原厂
