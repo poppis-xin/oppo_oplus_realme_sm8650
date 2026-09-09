@@ -135,6 +135,10 @@ jobs:
           echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%@cctv18"' >> ./arch/arm64/configs/gki_defconfig
           echo 'CONFIG_KPM=y' >> ./arch/arm64/configs/gki_defconfig
           cd ../KernelSU
+          # 关键: v4.2.0 kernel/Kbuild 缺少内置链接行, 补充使 kernelsu.o 编入内核 (ksu_handle_* 符号)
+          grep -q '^obj-\$(CONFIG_KSU) += kernelsu\.o$' kernel/Kbuild || echo 'obj-$(CONFIG_KSU) += kernelsu.o' >> kernel/Kbuild
+          echo "=== kernel/Kbuild 内置行检查 ==="
+          grep -n 'obj-\$(CONFIG_KSU)' kernel/Kbuild
           # 匹配 SukiSU Ultra v4.2.0 管理器 (40900)
           KSU_VERSION=40900
           sed -i "s/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION     := $KSU_VERSION/" kernel/Kbuild
