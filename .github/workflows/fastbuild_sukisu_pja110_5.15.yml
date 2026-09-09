@@ -1,0 +1,303 @@
+name: PJA110 5.15 SukiSU Ultra 40900 GKI构建
+
+env:
+  TZ: Asia/Shanghai
+  ANDROID_VERSION: 'android13'
+  KERNEL_VERSION: '5.15'
+  SUB_VERSION: '180'
+  # 伪造后的内核版本后缀，与原厂 boot.img 一致
+  FAKE_SUFFIX: 'android13-8-o-01174-gae37bb2cf108'
+  CCACHE_KEY: ccache-pja110-5.15.180
+
+on:
+  workflow_dispatch:
+    inputs:
+      susfs_enable:
+        description: '是否开启susfs(增强隐藏环境挂载; 建议开启)'
+        required: true
+        type: boolean
+        default: 'true'
+      kpm_enable:
+        description: '是否开启内置KPM(SukiSU内置KPM, 不需要可关闭)'
+        required: true
+        type: boolean
+        default: 'true'
+      lz4_enable:
+        description: '是否应用 lz4 1.10.0+zstd 1.5.7 补丁(建议开启)'
+        required: true
+        type: boolean
+        default: 'true'
+      ccache_update:
+        description: '更新ccache缓存'
+        required: true
+        type: boolean
+        default: 'false'
+      kernel_suffix:
+        description: '内核后缀(留空默认原厂伪造后缀)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      ak3name: ${{ steps.create_zip.outputs.ak3name }}
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: 安装环境依赖+初始化OnePlusOSS源码
+        run: |
+          rm -rf kernel_workspace
+          mkdir kernel_workspace
+          cd kernel_workspace
+          echo "当前仓库：$GITHUB_REPOSITORY"
+          echo "当前分支：$GITHUB_REF_NAME"
+
+          sudo apt-mark hold firefox &&
+          sudo apt-mark hold libc-bin &&
+          sudo apt purge man-db &&
+          sudo rm -rf /var/lib/man-db/auto-update &&
+          sudo apt update &&
+          sudo apt-get install -y --no-install-recommends binutils python-is-python3 libssl-dev libelf-dev &
+          
+          echo "正在下载 OnePlusOSS sm8550 内核源码..."
+          aria2c -s16 -x16 -k1M https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8550/archive/refs/heads/oneplus/sm8550_b_16.0.0_ace_2_pro.zip -o common.zip &
+          
+          echo "正在下载 llvm-Clang19 工具链..."
+          mkdir -p clang19 &&
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang19-r536225/clang-r536225.zip -o clang.zip &&
+          unzip -q clang.zip -d clang19 &&
+          rm -rf clang.zip &
+          
+          echo "正在下载构建工具..."
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang19-r536225/build-tools.zip -o build-tools.zip &&
+          unzip -q build-tools.zip &&
+          rm -rf build-tools.zip &
+
+          wait
+          echo "所有源码及工具链初始化完成！"
+          unzip -q common.zip && 
+          mv "android_kernel_common_oneplus_sm8550-oneplus-sm8550_b_16.0.0_ace_2_pro" common &&
+          rm -rf common.zip
+          echo "源码目录结构确认："
+          ls -la common | head
+            
+      - name: 修复 OnePlus 开源树死引用
+        run: |
+          cd kernel_workspace/common
+          echo "修复 4 处指向未开源 vendor 仓的死引用..."
+          # 1. 移除 kernel/oplus_cpu/sched/Kconfig 的 gitlink 占位
+          sed -i '/oplus_cpu\/sched\/Kconfig/d' init/Kconfig
+          # 2. 移除 drivers/soc/oplus/storage/Kconfig
+          sed -i '/oplus\/storage\/Kconfig/d' drivers/soc/Kconfig
+          # 3. 移除 drivers/soc/oplus/storage/
+          sed -i '/oplus\/storage/d' drivers/soc/Makefile
+          # 4. 移除 CONFIG_OPLUS_SCHED_TUNE=y
+          sed -i '/CONFIG_OPLUS_SCHED_TUNE=y/d' arch/arm64/configs/gki_defconfig
+          echo "查看修复结果..."
+          grep -n 'oplus_cpu' init/Kconfig || true
+          grep -n 'oplus/storage' drivers/soc/Kconfig || true
+          grep -n 'oplus/storage' drivers/soc/Makefile || true
+          grep -n 'OPLUS_SCHED_TUNE' arch/arm64/configs/gki_defconfig || true
+            
+      - name: 添加KernelSU(SukiSU Ultra v4.2.0)
+        id: ksu_version
+        run: |
+          cd kernel_workspace
+          echo "正在配置 SukiSU Ultra v4.2.0..."
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/tags/v4.2.0/kernel/setup.sh" | bash -s v4.2.0
+          # 内核版本伪造: 固定为原厂
+          if [[ -n "${{ github.event.inputs.kernel_suffix }}" ]]; then
+            FAKE_SUFFIX=${{ github.event.inputs.kernel_suffix }}
+          else
+            FAKE_SUFFIX=${{ env.FAKE_SUFFIX }}
+          fi
+          echo "FAKE_SUFFIX=$FAKE_SUFFIX" >> $GITHUB_ENV
+          echo 'CONFIG_KSU=y' >> ./common/arch/arm64/configs/gki_defconfig
+          echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%@cctv18"' >> ./common/arch/arm64/configs/gki_defconfig
+          echo 'CONFIG_KPM=y' >> ./common/arch/arm64/configs/gki_defconfig
+          cd ./KernelSU
+          # 匹配 SukiSU Ultra v4.2.0 管理器 (40900)
+          KSU_VERSION=40900
+          sed -i "s/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION     := $KSU_VERSION/" kernel/Kbuild
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
+            
+      - name: 应用SUSFS补丁(gki-android13-5.15)
+        if: inputs.susfs_enable
+        run: |
+          cd kernel_workspace
+          echo "正在下载 susfs4ksu 官方 5.15 补丁..."
+          git clone --depth=1 https://github.com/ShirkNeko/susfs4ksu.git susfs4ksu -b gki-android13-5.15
+          cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-android13-5.15.patch ./common/
+          cp -r ./susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp ./susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          cd ./common
+          patch -p1 < 50_add_susfs_in_gki-android13-5.15.patch || true
+          # 为SukiSU内核驱动应用 SUSFS 支持补丁 (使CONFIG_KSU_SUSFS生效)
+          cd ../KernelSU
+          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
+          patch -p1 -N -F 3 < 10_enable_susfs_for_ksu.patch || true
+          echo "SUSFS 补丁应用完成！（如需完整SUSFS支持，请检查 KernelSU 侧补丁是否全部应用成功）"
+            
+      - name: 添加SUSFS配置项
+        if: inputs.susfs_enable
+        run: |
+          cd kernel_workspace/common
+          echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "配置项添加完成！"
+            
+      - name: 应用lz4 1.10.0 & zstd 1.5.7补丁
+        if: inputs.lz4_enable
+        run: |
+          echo "正在添加lz4 1.10.0 & zstd 1.5.7补丁…"
+          cd kernel_workspace
+          cp ./zram_patch/001-lz4.patch ./common/
+          cp ./zram_patch/lz4armv8.S ./common/lib
+          cp ./zram_patch/002-zstd.patch ./common/
+          cd ./common
+          git apply -p1 < 001-lz4.patch || true
+          patch -p1 < 002-zstd.patch || true
+            
+      - name: 添加KSU & 其他配置项
+        run: |
+          cd kernel_workspace/common
+          echo "CONFIG_KSU=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TMPFS_XATTR=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./arch/arm64/configs/gki_defconfig
+          echo "CONFIG_HEADERS_INSTALL=n" >> ./arch/arm64/configs/gki_defconfig
+          sed -i 's/check_defconfig//' ./build.config.gki
+          # 去除 ABI 保护 & dirty 后缀
+          rm ./android/abi_gki_protected_exports_* || true
+          sed -i 's/ -dirty//g' ./scripts/setlocalversion
+          sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' ./scripts/setlocalversion
+          echo "KSU 添加完成！"
+            
+      - name: 伪造内核版本(uname)
+        run: |
+          cd kernel_workspace/common
+          echo "内核版本将伪造为: 5.15.180-${{ env.FAKE_SUFFIX }}"
+          # 在 setlocalversion 末尾强制输出原厂后缀
+          sed -i '$a echo "-${{ env.FAKE_SUFFIX }}"' ./scripts/setlocalversion
+          # 设置 CONFIG_LOCALVERSION
+          echo "CONFIG_LOCALVERSION=-${{ env.FAKE_SUFFIX }}" >> ./arch/arm64/configs/gki_defconfig
+          echo "伪造完成！"
+            
+      - name: 编译内核
+        run: |
+          cd kernel_workspace/common
+          echo "开始编译内核..."
+          export CLANG_PATH="${{ github.workspace }}/kernel_workspace/clang19/clang-r536225/bin"
+          export PATH="$CLANG_PATH:$PATH"
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
+          echo "内核编译完成！"
+          ls -la out/arch/arm64/boot/Image || echo "Image NOT FOUND"
+            
+      - name: 克隆 AnyKernel3 并打包
+        id: create_zip
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/cctv18/AnyKernel3 --depth=1
+          rm -rf ./AnyKernel3/.git
+          cd AnyKernel3
+          cp ../common/out/arch/arm64/boot/Image ./Image
+          if [[ ! -f ./Image ]]; then
+            echo "未找到内核镜像文件，构建可能出错"
+            exit 1
+          fi
+          KSU_TYPENAME="SukiSU"
+          if [[ -n "${{ github.event.inputs.kernel_suffix }}" ]]; then
+            AK3_NAME=AnyKernel3_${KSU_TYPENAME}_40900_${{ env.KERNEL_VERSION }}_${{ github.event.inputs.kernel_suffix }}.zip
+          else
+            AK3_NAME=AnyKernel3_${KSU_TYPENAME}_40900_${{ env.KERNEL_VERSION }}_pja110-fakesuffix.zip
+          fi
+          zip -r ../$AK3_NAME ./*
+          echo "ak3name=$AK3_NAME" >> $GITHUB_OUTPUT
+          
+          # 为AK3添加注释（调试信息）
+          if [[ -n "${{ github.event.inputs.kernel_suffix }}" ]]; then
+            FULL_VERSION=${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}-${{ github.event.inputs.kernel_suffix }}
+          else
+            FULL_VERSION=${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}-${{ env.FAKE_SUFFIX }}
+          fi
+          TIME_NOW="$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')"
+          echo "Author: $GITHUB_ACTOR" > ./ak3.log
+          echo "Repo: $GITHUB_REPOSITORY" >> ./ak3.log
+          echo "Branch: $GITHUB_REF_NAME" >> ./ak3.log
+          echo "Run ID: $GITHUB_RUN_ID" >> ./ak3.log
+          echo "Commit: $GITHUB_SHA" >> ./ak3.log
+          echo "Time: $TIME_NOW" >> ./ak3.log
+          echo "Kernel Ver: $FULL_VERSION" >> ./ak3.log
+          echo "KSU Branch: ${KSU_TYPENAME}" >> ./ak3.log
+          echo "KSU Ver: 40900" >> ./ak3.log
+          echo "susfs: ${{ github.event.inputs.susfs_enable }}" >> ./ak3.log
+          echo "KPM: ${{ github.event.inputs.kpm_enable }}" >> ./ak3.log
+          echo "LZ4: ${{ github.event.inputs.lz4_enable }}" >> ./ak3.log
+          echo "Device: PJA110 (OnePlus Ace 2 Pro, SM8550, ColorOS 16.0.2.400)" >> ./ak3.log
+          zip -z ../$AK3_NAME < ./ak3.log
+            
+      - name: 上传ZIP工件
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ github.workspace }}/kernel_workspace/AnyKernel*.zip
+          archive: false
+            
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    steps:
+      - name: 下载ZIP工件
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.ak3name }}
+          path: release_zips
+          skip-decompress: true
+
+      - name: 创建发布
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat << 'EOF' > release_notes.md
+          ### 📱 PJA110 (OnePlus Ace 2 Pro) SukiSU Ultra GKI 内核
+          - 设备：PJA110 (OnePlus Ace 2 Pro, SM8550, ColorOS 16.0.2.400)
+          - 内核版本: 5.15.180-android13-8-o-01174-gae37bb2cf108 (伪造)
+          - KSU分支: SukiSU Ultra v4.2.0
+          - KSU Ver: 40900
+          - SUSFS: com.susfs
+          - KPM: 内置 (SukiSU内置KPM)
+          - LZ4/Zstd: 已启用
+          
+          ### 📋 安装方法
+          1. 若已有 root，可在 SukiSU Ultra 管理器中刷入AnyKernel刷机包并重启
+          2. 也可使用 SmartTool_GKI 生成 boot-new.img 刷入 boot 分区
+          3. 刷前务必备份原 boot.img，需解锁 BL
+          EOF
+
+          gh release create "${{ needs.build.outputs.ak3name }}-${{ github.run_id }}" \
+            --repo "${{ github.repository }}" \
+            --title "PJA110-SukiSU-Ultra-40900-5.15.180" \
+            --notes-file release_notes.md \
+            release_zips/AnyKernel3_*.zip
