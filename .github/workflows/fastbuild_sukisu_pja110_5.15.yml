@@ -135,15 +135,16 @@ jobs:
           echo "正在下载 susfs4ksu 官方 5.15 补丁..."
           git clone --depth=1 https://github.com/ShirkNeko/susfs4ksu.git susfs4ksu -b gki-android13-5.15
           cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-android13-5.15.patch ./common/
-          cp -r ./susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp ./susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          cp ./susfs4ksu/kernel_patches/fs/susfs.c ./common/fs/
+          cp ./susfs4ksu/kernel_patches/include/linux/susfs.h ./common/include/linux/
+          cp ./susfs4ksu/kernel_patches/include/linux/susfs_def.h ./common/include/linux/
           cd ./common
           patch -p1 < 50_add_susfs_in_gki-android13-5.15.patch || true
-          # 为SukiSU内核驱动应用 SUSFS 支持补丁 (使CONFIG_KSU_SUSFS生效)
-          cd ../KernelSU
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
-          patch -p1 -N -F 3 < 10_enable_susfs_for_ksu.patch || true
-          echo "SUSFS 补丁应用完成！（如需完整SUSFS支持，请检查 KernelSU 侧补丁是否全部应用成功）"
+          # 手动追加 SUSFS Kconfig 定义到 fs/Kconfig (官方10_enable补丁针对旧版KernelSU, SukiSU v4.2.0直接追加Kconfig段)
+          cat "${{ github.workspace }}/other_patch/susfs_kconfig.txt" >> fs/Kconfig
+          echo "=== SUSFS Kconfig 段已追加 ==="
+          grep -n 'KSU_SUSFS' fs/Kconfig | head -3
+          echo "SUSFS 补丁应用完成！"
             
       - name: 添加SUSFS配置项
         if: inputs.susfs_enable
@@ -166,18 +167,11 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> ./arch/arm64/configs/gki_defconfig
           echo "配置项添加完成！"
             
-      - name: 应用lz4 1.10.0 & zstd 1.5.7补丁
-        if: inputs.lz4_enable
+      - name: 应用lz4/zstd补丁(5.15跳过)
+        if: inputs.lz4_enable == 'true' && 'false'
         run: |
-          echo "正在添加lz4 1.10.0 & zstd 1.5.7补丁…"
-          cd kernel_workspace
-          # zram_patch/ 在仓库根目录 ($GITHUB_WORKSPACE)
-          cp "${{ github.workspace }}/zram_patch/001-lz4.patch" ./common/
-          cp "${{ github.workspace }}/zram_patch/lz4armv8.S" ./common/lib
-          cp "${{ github.workspace }}/zram_patch/002-zstd.patch" ./common/
-          cd ./common
-          git apply -p1 < 001-lz4.patch || true
-          patch -p1 < 002-zstd.patch || true
+          echo "5.15 内核跳过 lz4 1.10.0 & zstd 1.5.7 补丁（该补丁针对6.1内核，应用于5.15会导致 zstd.h 编译错误）"
+          echo "如需 lz4 支持请在后续版本中适配 5.15 专用补丁"
             
       - name: 添加KSU & 其他配置项
         run: |
