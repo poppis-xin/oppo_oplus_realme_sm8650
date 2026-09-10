@@ -92,8 +92,12 @@ jobs:
           sed -i '/oplus\/storage\/Kconfig/d' drivers/soc/Kconfig
           sed -i '/oplus\/storage/d' drivers/soc/Makefile
           sed -i '/CONFIG_OPLUS_SCHED_TUNE=y/d' arch/arm64/configs/gki_defconfig
+          # OnePlus 的连续 PTE 扩展使用文件系统 magic 常量，但源码遗漏了标准头文件。
+          grep -q '^#include <linux/magic.h>' mm/cont_pte_hugepage.c || \
+            sed -i '/#include <linux\/mm.h>/a #include <linux/magic.h>' mm/cont_pte_hugepage.c
           ! grep -q 'oplus_cpu/sched/Kconfig\|oplus/storage\|CONFIG_OPLUS_SCHED_TUNE=y' \
             init/Kconfig drivers/soc/Kconfig drivers/soc/Makefile arch/arm64/configs/gki_defconfig
+          grep -q '^#include <linux/magic.h>' mm/cont_pte_hugepage.c
 
       - name: 使用 SukiSU 官方 builtin setup.sh
         shell: bash
