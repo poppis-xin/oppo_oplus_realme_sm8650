@@ -148,6 +148,31 @@ jobs:
           grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile
           grep -q 'CONFIG_KSU_SUSFS' fs/exec.c fs/namespace.c security/selinux/hooks.c
           grep -q 'CONFIG_KSU_SUSFS_SUS_MAP' mm/memory.c
+
+          # SukiSU builtin 4.2.0 已在 sucompat 中直接重定向 su，不再提供旧的会话 FD 接口。
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("fs/exec.c")
+          source = path.read_text()
+          replacements = {
+              "extern int ksu_install_su_fd(void);\n": "",
+              "\tbool is_su_session = false;\n": "",
+              "is_su_session = !ksu_handle_execveat(": "(void)ksu_handle_execveat(",
+              "is_su_session = !ksu_handle_execveat_sucompat(": "(void)ksu_handle_execveat_sucompat(",
+              "#ifdef CONFIG_KSU_SUSFS\n\tif (unlikely(is_su_session && retval >= 0))\n\t\tksu_install_su_fd();\n#endif // #ifdef CONFIG_KSU_SUSFS\n": "",
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one legacy SukiSU fragment, found {count}: {old!r}")
+              source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+          ! grep -q 'ksu_install_su_fd\|is_su_session' fs/exec.c
+          grep -q '(void)ksu_handle_execveat(' fs/exec.c
+          grep -q '(void)ksu_handle_execveat_sucompat(' fs/exec.c
+
           # 该 include 在 OnePlus 源码上下文变化时由官方 hunk 无法定位，属于最小适配。
           grep -q 'linux/susfs_def.h' mm/memory.c || \
             sed -i '/#include <linux\/vmalloc.h>/a #include <linux/susfs_def.h>' mm/memory.c
