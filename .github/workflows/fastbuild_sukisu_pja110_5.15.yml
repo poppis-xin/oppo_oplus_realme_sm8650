@@ -166,32 +166,32 @@ jobs:
           make LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CC="$PWD/../clang19/bin/clang" LD="$PWD/../clang19/bin/ld.lld" \
             HOSTLD="$PWD/../clang19/bin/ld.lld" O=out gki_defconfig
-          ./scripts/config --file=out/.config --enable KSU
-          ./scripts/config --file=out/.config --set-str LOCALVERSION "-$fake_suffix"
-          ./scripts/config --file=out/.config --disable LOCALVERSION_AUTO
-          ./scripts/config --file=out/.config --enable LTO_NONE
-          ./scripts/config --file=out/.config --disable LTO_CLANG_THIN
-          ./scripts/config --file=out/.config --disable LTO_CLANG_FULL
+          ./scripts/config --file out/.config --enable KSU
+          ./scripts/config --file out/.config --set-str LOCALVERSION "-$fake_suffix"
+          ./scripts/config --file out/.config --disable LOCALVERSION_AUTO
+          ./scripts/config --file out/.config --enable LTO_NONE
+          ./scripts/config --file out/.config --disable LTO_CLANG_THIN
+          ./scripts/config --file out/.config --disable LTO_CLANG_FULL
 
           if [[ "${{ inputs.kpm_enable }}" == 'true' ]]; then
-            ./scripts/config --file=out/.config --enable KPM
+            ./scripts/config --file out/.config --enable KPM
           else
-            ./scripts/config --file=out/.config --disable KPM
+            ./scripts/config --file out/.config --disable KPM
           fi
 
           if [[ "${{ inputs.susfs_enable }}" == 'true' ]]; then
-            ./scripts/config --file=out/.config --enable KSU_SUSFS
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SUS_PATH
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SUS_MOUNT
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SUS_KSTAT
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SPOOF_UNAME
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_ENABLE_LOG
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_OPEN_REDIRECT
-            ./scripts/config --file=out/.config --enable KSU_SUSFS_SUS_MAP
+            ./scripts/config --file out/.config --enable KSU_SUSFS
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SUS_PATH
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SUS_MOUNT
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SUS_KSTAT
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_UNAME
+            ./scripts/config --file out/.config --enable KSU_SUSFS_ENABLE_LOG
+            ./scripts/config --file out/.config --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            ./scripts/config --file out/.config --enable KSU_SUSFS_OPEN_REDIRECT
+            ./scripts/config --file out/.config --enable KSU_SUSFS_SUS_MAP
           else
-            ./scripts/config --file=out/.config --disable KSU_SUSFS
+            ./scripts/config --file out/.config --disable KSU_SUSFS
           fi
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
