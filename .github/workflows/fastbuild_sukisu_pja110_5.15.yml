@@ -236,9 +236,10 @@ jobs:
           export PATH="$PWD/../clang19/bin:$PWD/../build-tools/bin:$PATH"
           make -j"$(nproc --all)" LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CC="$PWD/../clang19/bin/clang" LD="$PWD/../clang19/bin/ld.lld" \
-            HOSTLD="$PWD/../clang19/bin/ld.lld" O=out KCFLAGS='-O2 -Wno-error' Image
+            HOSTLD="$PWD/../clang19/bin/ld.lld" LOCALVERSION= O=out KCFLAGS='-O2 -Wno-error' Image
           test -s out/arch/arm64/boot/Image
-          strings out/arch/arm64/boot/Image | grep -F '5.15.180-' | head -1 || true
+          expected_release="5.15.180-$FAKE_SUFFIX"
+          strings out/arch/arm64/boot/Image | grep -F "Linux version ${expected_release} ("
 
       - name: 使用官方 AnyKernel3 打包
         id: create_zip
