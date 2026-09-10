@@ -264,7 +264,8 @@ jobs:
           else
               flash_boot
           fi
-          ## end boot install""" + source[end:]
+          ## end boot install
+          """
           path.write_text(source)
           PY
           sed -i 's/^kernel.string=.*/kernel.string=OnePlus Ace 2 Pro PJA110 SukiSU Ultra 40901 GKI/' anykernel.sh
