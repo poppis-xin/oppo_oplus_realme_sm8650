@@ -1,4 +1,4 @@
-name: PJA110 5.15 SukiSU Ultra 40900 GKI构建
+name: PJA110 5.15 SukiSU Ultra 40901 GKI构建
 
 env:
   TZ: Asia/Shanghai
@@ -248,24 +248,52 @@ jobs:
           cd kernel_workspace
           git clone --depth=1 https://github.com/cctv18/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
-          cp common/out/arch/arm64/boot/Image AnyKernel3/Image
-          test -s AnyKernel3/Image
           cd AnyKernel3
-          if [[ -n "${{ inputs.kernel_suffix }}" ]]; then
-            ak3_name="AnyKernel3_SukiSU_40900_5.15_${{ inputs.kernel_suffix }}.zip"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("anykernel.sh")
+          source = path.read_text()
+          start = source.index("# boot install")
+          end = source.index("## end boot install") + len("## end boot install")
+          source = source[:start] + """# boot install
+          split_boot
+          if [ -f \"split_img/ramdisk.cpio\" ]; then
+              unpack_ramdisk
+              write_boot
           else
-            ak3_name='AnyKernel3_SukiSU_40900_5.15_pja110-fakesuffix.zip'
+              flash_boot
+          fi
+          ## end boot install""" + source[end:]
+          path.write_text(source)
+          PY
+          sed -i 's/^kernel.string=.*/kernel.string=OnePlus Ace 2 Pro PJA110 SukiSU Ultra 40901 GKI/' anykernel.sh
+          sed -i 's/^do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
+          sed -i 's/^device.name1=.*/device.name1=PJA110/' anykernel.sh
+          sed -i 's/^device.name2=.*/device.name2=OP5D77L1/' anykernel.sh
+          sed -i 's/^device.name3=.*/device.name3=OnePlusAce2Pro/' anykernel.sh
+          sed -i 's/^device.name4=.*/device.name4=/' anykernel.sh
+          sed -i 's/^device.name5=.*/device.name5=/' anykernel.sh
+          bash -n anykernel.sh
+          ! grep -q 'zram\|kpn\|KSUD_PATH' anykernel.sh
+          cp ../common/out/arch/arm64/boot/Image ./Image
+          test -s Image
+          if [[ -n "${{ inputs.kernel_suffix }}" ]]; then
+            ak3_name="AnyKernel3_SukiSU_40901_5.15_${{ inputs.kernel_suffix }}.zip"
+          else
+            ak3_name='AnyKernel3_SukiSU_40901_5.15_pja110-fakesuffix.zip'
           fi
           zip -r9 "../$ak3_name" ./*
           printf 'ak3name=%s\n' "$ak3_name" >> "$GITHUB_OUTPUT"
           cat > ak3.log <<EOF
           Device: PJA110 (OnePlus Ace 2 Pro, SM8550)
           Kernel: 5.15.180-$FAKE_SUFFIX
-          SukiSU builtin commit: $SUKISU_BUILTIN_COMMIT
+          SukiSU: 40901 [v4.2.0] builtin commit $SUKISU_BUILTIN_COMMIT
           SUSFS commit: $SUSFS_COMMIT
           KPM: ${{ inputs.kpm_enable }} (内置 CONFIG_KPM)
           SUSFS: ${{ inputs.susfs_enable }}
           LZ4/Zstd: not applied (the available patch targets 6.1, not this 5.15 tree)
+          Device check: PJA110, OP5D77L1, OnePlusAce2Pro
           EOF
           zip -z "../$ak3_name" < ak3.log
 
@@ -297,7 +325,7 @@ jobs:
           cat > release_notes.md <<'EOF'
           ### PJA110 / OnePlus Ace 2 Pro / SM8550
           - 内核：5.15.180，uname 后缀伪装为 `android13-8-o-01174-gae37bb2cf108`
-          - SukiSU：官方 `builtin` 分支固定提交
+          - SukiSU：官方 `builtin` 分支固定提交，实际版本 40901（v4.2.0）
           - SUSFS：官方 `gki-android13-5.15` 补丁固定提交
           - KPM：编译选项可控，启用时内置进 `Image`
           - LZ4/Zstd：未应用，当前可用补丁不适用于 5.15
@@ -307,6 +335,6 @@ jobs:
           EOF
           gh release create "${{ needs.build.outputs.ak3name }}-${{ github.run_id }}" \
             --repo "${{ github.repository }}" \
-            --title "PJA110-SukiSU-Ultra-40900-5.15.180" \
+            --title "PJA110-SukiSU-Ultra-40901-5.15.180" \
             --notes-file release_notes.md \
             release_zips/*.zip
